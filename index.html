@@ -2,18 +2,18 @@
 <html lang="fa">
 <head>
   <meta charset="utf-8" />
-  <title>تست ثبت‌نام Passkey (RSA-SHA256)</title>
+  <title>تست ثبت‌نام RSA Passkey</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body { font-family: Tahoma, sans-serif; direction: rtl; padding: 20px; }
-    input, button { font-size: 14px; padding: 8px; margin: 6px 0; }
-    .log { background: #f3f3f3; padding: 10px; border-radius: 6px; white-space: pre-wrap; }
+    body { font-family: Tahoma, sans-serif; padding:20px; direction:rtl; }
+    input, button { font-size:14px; padding:8px; margin:6px 0; }
+    .log { background:#f3f3f3; padding:10px; border-radius:6px; white-space:pre-wrap; }
   </style>
 </head>
 <body>
   <h2>ثبت‌نام کاربر با Passkey (RSA-SHA256)</h2>
 
-  <label>ایمیل (شناسه کاربر):</label><br/>
+  <label>ایمیل:</label><br/>
   <input id="email" placeholder="user@example.com" style="width:300px"/><br/>
   <button id="registerBtn">ثبت‌نام</button>
 
@@ -29,9 +29,9 @@
       const email = document.getElementById("email").value.trim();
       if (!email) return alert("ایمیل را وارد کنید");
       try {
-        log("در حال ساخت کلیدهای RSA...");
+        log("در حال ایجاد Passkey...");
         const res = await PasskeySDK.register(email);
-        log("✅ ثبت‌نام موفق!\n\nکلید عمومی:\n" + res.publicKey);
+        log("✅ ثبت‌نام موفق!\n\nکلید عمومی:\n" + res.publicKeyPem);
       } catch (err) {
         log("❌ خطا: " + err.message);
         console.error(err);
