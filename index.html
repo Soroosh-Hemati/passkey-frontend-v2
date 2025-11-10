@@ -36,6 +36,8 @@
       border-radius: 8px;
       text-align: left;
       direction: ltr;
+      max-height: 300px;
+      overflow: auto;
     }
   </style>
 </head>
@@ -46,4 +48,68 @@
 
   <input type="text" id="userId" placeholder="user@example.com" />
   <br />
-  <button id="registerBtn">ثب
+  <button id="registerBtn">ثبت‌نام Passkey</button>
+
+  <h3>نتیجه:</h3>
+  <pre id="result"></pre>
+
+  <script>
+    const BASE_URL = "https://passkey-backend-xht7.onrender.com";
+
+    async function handleRegister() {
+      const resultBox = document.getElementById("result");
+      resultBox.textContent = "در حال ساخت کلید و ثبت در سرور...";
+
+      const id = document.getElementById("userId").value.trim();
+      if (!id) {
+        alert("شناسه را وارد کنید.");
+        return;
+      }
+
+      try {
+        // 1️⃣ دریافت challenge از سرور
+        const challengeRes = await fetch(`${BASE_URL}/api/register-challenge`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id })
+        });
+
+        if (!challengeRes.ok) {
+          throw new Error("دریافت challenge با خطا مواجه شد");
+        }
+
+        const options = await challengeRes.json();
+        const publicKey = options.publicKey;
+
+        // 2️⃣ ایجاد credential با WebAuthn
+        const cred = await navigator.credentials.create({ publicKey });
+        if (!cred) throw new Error("ساخت credential شکست خورد");
+
+        // 3️⃣ استخراج کلید عمومی RSA از attestation
+        const attestationBuffer = cred.response.attestationObject;
+        const publicKeyPem = await PasskeySDK.extractRSAPublicKey(attestationBuffer);
+
+        // 4️⃣ ذخیره public key در سرور
+        const saveRes = await fetch(`${BASE_URL}/api/save-key`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, public_key: publicKeyPem })
+        });
+
+        if (!saveRes.ok) {
+          const err = await saveRes.json().catch(() => ({}));
+          throw new Error(err.error || "خطا در ذخیره کلید در سرور");
+        }
+
+        resultBox.textContent = "✅ ثبت‌نام موفق!\n\n" + publicKeyPem;
+      } catch (err) {
+        console.error(err);
+        resultBox.textContent = "❌ خطا: " + err.message;
+      }
+    }
+
+    document.getElementById("registerBtn").addEventListener("click", handleRegister);
+  </script>
+
+</body>
+</html>
