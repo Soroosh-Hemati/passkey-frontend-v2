@@ -1,42 +1,49 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fa">
 <head>
-  <meta charset="utf-8" />
-  <title>تست ثبت‌نام RSA Passkey</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="UTF-8" />
+  <title>تست ثبت‌نام Passkey (RSA-SHA256)</title>
+  <script src="./passkey-sdk.js"></script>
   <style>
-    body { font-family: Tahoma, sans-serif; padding:20px; direction:rtl; }
-    input, button { font-size:14px; padding:8px; margin:6px 0; }
-    .log { background:#f3f3f3; padding:10px; border-radius:6px; white-space:pre-wrap; }
+    body {
+      font-family: sans-serif;
+      direction: rtl;
+      text-align: center;
+      padding: 50px;
+    }
+    input {
+      padding: 10px;
+      width: 250px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      margin-bottom: 10px;
+    }
+    button {
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: none;
+      background-color: #007bff;
+      color: white;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover {
+      background-color: #0056b3;
+    }
+    pre {
+      background: #f8f9fa;
+      padding: 10px;
+      border-radius: 8px;
+      text-align: left;
+      direction: ltr;
+    }
   </style>
 </head>
 <body>
-  <h2>ثبت‌نام کاربر با Passkey (RSA-SHA256)</h2>
 
-  <label>ایمیل:</label><br/>
-  <input id="email" placeholder="user@example.com" style="width:300px"/><br/>
-  <button id="registerBtn">ثبت‌نام</button>
+  <h2>🧩 تست ثبت‌نام Passkey (RSA-SHA256)</h2>
+  <p>ایمیل یا شناسه کاربر را وارد کن و روی «ثبت‌نام» بزن.</p>
 
-  <div id="log" class="log">در انتظار عملیات...</div>
-
-  <script src="passkey-sdk.js"></script>
-  <script>
-    const log = (msg) => {
-      document.getElementById("log").textContent = msg;
-    };
-
-    document.getElementById("registerBtn").onclick = async () => {
-      const email = document.getElementById("email").value.trim();
-      if (!email) return alert("ایمیل را وارد کنید");
-      try {
-        log("در حال ایجاد Passkey...");
-        const res = await PasskeySDK.register(email);
-        log("✅ ثبت‌نام موفق!\n\nکلید عمومی:\n" + res.publicKeyPem);
-      } catch (err) {
-        log("❌ خطا: " + err.message);
-        console.error(err);
-      }
-    };
-  </script>
-</body>
-</html>
+  <input type="text" id="userId" placeholder="user@example.com" />
+  <br />
+  <button id="registerBtn">ثب
