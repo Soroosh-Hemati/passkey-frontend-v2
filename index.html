@@ -56,6 +56,17 @@
   <script>
     const BASE_URL = "https://passkey-backend-xht7.onrender.com";
 
+    // تبدیل base64url به ArrayBuffer
+    function base64UrlToBuffer(base64urlString) {
+      const padding = "=".repeat((4 - (base64urlString.length % 4)) % 4);
+      const base64 = base64urlString.replace(/-/g, "+").replace(/_/g, "/") + padding;
+      const str = atob(base64);
+      const buf = new ArrayBuffer(str.length);
+      const bufView = new Uint8Array(buf);
+      for (let i = 0; i < str.length; i++) bufView[i] = str.charCodeAt(i);
+      return buf;
+    }
+
     async function handleRegister() {
       const resultBox = document.getElementById("result");
       resultBox.textContent = "در حال ساخت کلید و ثبت در سرور...";
@@ -74,12 +85,14 @@
           body: JSON.stringify({ id })
         });
 
-        if (!challengeRes.ok) {
-          throw new Error("دریافت challenge با خطا مواجه شد");
-        }
+        if (!challengeRes.ok) throw new Error("دریافت challenge با خطا مواجه شد");
 
         const options = await challengeRes.json();
         const publicKey = options.publicKey;
+
+        // تبدیل challenge و user.id به ArrayBuffer
+        publicKey.challenge = base64UrlToBuffer(publicKey.challenge);
+        publicKey.user.id = new TextEncoder().encode(id);
 
         // 2️⃣ ایجاد credential با WebAuthn
         const cred = await navigator.credentials.create({ publicKey });

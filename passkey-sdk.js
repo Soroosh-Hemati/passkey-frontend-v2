@@ -1,4 +1,3 @@
-// passkey-sdk.js (RSA-SHA256 with backend URL)
 const PasskeySDK = (() => {
   const BASE_URL = "https://passkey-backend-xht7.onrender.com";
 
@@ -13,6 +12,17 @@ const PasskeySDK = (() => {
     const b64 = bufferToBase64(spkiBuffer);
     const lines = b64.match(/.{1,64}/g) || [];
     return `-----BEGIN PUBLIC KEY-----\n${lines.join("\n")}\n-----END PUBLIC KEY-----`;
+  }
+
+  // تبدیل base64url به ArrayBuffer
+  function base64UrlToBuffer(base64urlString) {
+    const padding = "=".repeat((4 - (base64urlString.length % 4)) % 4);
+    const base64 = base64urlString.replace(/-/g, "+").replace(/_/g, "/") + padding;
+    const str = atob(base64);
+    const buf = new ArrayBuffer(str.length);
+    const bufView = new Uint8Array(buf);
+    for (let i = 0; i < str.length; i++) bufView[i] = str.charCodeAt(i);
+    return buf;
   }
 
   // --- minimal CBOR decoder ---
@@ -136,39 +146,44 @@ const PasskeySDK = (() => {
   async function register(id) {
     if (!id) throw new Error("id الزامی است");
 
-    const publicKey = {
-      rp: { name: "Passkey Demo" },
-      user: {
-        id: new TextEncoder().encode(id),
-        name: id,
-        displayName: id
-      },
-      pubKeyCredParams: [{ type: "public-key", alg: -257 }], // RSA-SHA256
-      timeout: 60000,
-      attestation: "direct",
-      authenticatorSelection: { userVerification: "preferred" },
-    };
+    // دریافت challenge از سرور
+    const challengeRes = await fetch(`${BASE_URL}/api/register-challenge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id })
+    });
 
+    if (!challengeRes.ok) throw new Error("دریافت challenge با خطا مواجه شد");
+    const options = await challengeRes.json();
+    const publicKey = options.publicKey;
+
+    // اصلاح challenge و user.id به ArrayBuffer
+    publicKey.challenge = base64UrlToBuffer(publicKey.challenge);
+    publicKey.user.id = new TextEncoder().encode(id);
+
+    // ساخت credential
     const cred = await navigator.credentials.create({ publicKey });
-    if (!cred) throw new Error("credential creation failed");
+    if (!cred) throw new Error("ساخت credential شکست خورد");
 
     const attestationBuffer = cred.response.attestationObject;
     const publicKeyPem = await extractRSAPublicKey(attestationBuffer);
 
-    const resp = await fetch(`${BASE_URL}/api/save-key`, {
+    // ذخیره public key در سرور
+    const saveRes = await fetch(`${BASE_URL}/api/save-key`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, public_key: publicKeyPem })
     });
 
-    if (!resp.ok) {
-      const err = await resp.json().catch(() => ({}));
-      throw new Error(err.error || "خطا در ارتباط با سرور");
+    if (!saveRes.ok) {
+      const err = await saveRes.json().catch(() => ({}));
+      throw new Error(err.error || "خطا در ذخیره کلید در سرور");
     }
 
     return { success: true, publicKeyPem };
   }
 
-  return { register };
+  return { register, extractRSAPublicKey };
 })();
+
 if (typeof window !== "undefined") window.PasskeySDK = PasskeySDK;
