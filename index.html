@@ -1,38 +1,97 @@
 <!DOCTYPE html>
 <html lang="fa">
-<head>
-  <meta charset="utf-8" />
-  <title>تست ثبت‌نام Passkey (ES256 + RSA)</title>
-  <script src="./passkey-sdk.js"></script>
-  <style>
-    body{font-family:sans-serif;direction:rtl;padding:40px;text-align:center}
-    input{padding:10px;width:320px;border-radius:8px;border:1px solid #ccc;margin-bottom:10px}
-    button{padding:10px 20px;border-radius:8px;border:none;background:#007bff;color:#fff;cursor:pointer}
-    pre{background:#f8f9fa;padding:12px;border-radius:8px;text-align:left;direction:ltr;max-height:300px;overflow:auto}
-  </style>
-</head>
-<body>
-  <h2>تست ثبت‌نام Passkey (ES256 + RSA)</h2>
-  <input id="userId" placeholder="user@example.com" />
-  <br/>
-  <button id="registerBtn">ثبت‌نام Passkey</button>
-  <h3>نتیجه</h3>
-  <pre id="result"></pre>
-
-  <script>
-    const resultBox = document.getElementById("result");
-    document.getElementById("registerBtn").addEventListener("click", async () => {
-      const id = document.getElementById("userId").value.trim();
-      if (!id) { alert("شناسه را وارد کنید"); return; }
-      resultBox.textContent = "در حال ثبت‌نام...";
-      try {
-        const res = await PasskeySDK.register(id);
-        resultBox.textContent = "✅ ثبت‌نام موفق!\ncredentialId (base64): " + res.credentialId + "\nالگوریتم انتخاب شده (COSE alg): " + res.alg + "\n\npublicKey PEM:\n" + res.publicKeyPem;
-      } catch (e) {
-        console.error(e);
-        resultBox.textContent = "❌ خطا: " + (e && e.message ? e.message : String(e));
+  <head>
+    <meta charset="utf-8" />
+    <title>تست ثبت‌نام Passkey (ES256 + RSA)</title>
+    <script src="./passkey-sdk.js"></script>
+    <style>
+      body {
+        font-family: sans-serif;
+        direction: rtl;
+        padding: 40px;
+        text-align: center;
       }
-    });
-  </script>
-</body>
+      input {
+        padding: 10px;
+        width: 320px;
+        border-radius: 8px;
+        border: 1px solid #ccc;
+        margin-bottom: 10px;
+      }
+      button {
+        padding: 10px 20px;
+        border-radius: 8px;
+        border: none;
+        background: #007bff;
+        color: #fff;
+        cursor: pointer;
+      }
+      pre {
+        background: #f8f9fa;
+        padding: 12px;
+        border-radius: 8px;
+        text-align: left;
+        direction: ltr;
+        max-height: 300px;
+        overflow: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>تست ثبت‌نام Passkey (ES256 + RSA)</h2>
+    <input id="userId" placeholder="user@example.com" />
+    <br />
+    <button id="registerBtn">ثبت‌نام Passkey</button>
+    <button id="loginBtn">ورود با Passkey</button>
+    <h3>نتیجه</h3>
+    <pre id="result"></pre>
+
+    <script>
+      const resultBox = document.getElementById("result");
+      document
+        .getElementById("loginBtn")
+        .addEventListener("click", async () => {
+          const id = document.getElementById("userId").value.trim();
+          if (!id) {
+            alert("شناسه را وارد کنید");
+            return;
+          }
+          resultBox.textContent = "در حال ورود...";
+          try {
+            const res = await PasskeySDK.login(id);
+            resultBox.textContent =
+              "✅ ورود موفق!\nپیغام سرور: " + JSON.stringify(res);
+          } catch (e) {
+            console.error(e);
+            resultBox.textContent =
+              "❌ خطا: " + (e && e.message ? e.message : String(e));
+          }
+        });
+
+      document
+        .getElementById("registerBtn")
+        .addEventListener("click", async () => {
+          const id = document.getElementById("userId").value.trim();
+          if (!id) {
+            alert("شناسه را وارد کنید");
+            return;
+          }
+          resultBox.textContent = "در حال ثبت‌نام...";
+          try {
+            const res = await PasskeySDK.register(id);
+            resultBox.textContent =
+              "✅ ثبت‌نام موفق!\ncredentialId (base64): " +
+              res.credentialId +
+              "\nالگوریتم انتخاب شده (COSE alg): " +
+              res.alg +
+              "\n\npublicKey PEM:\n" +
+              res.publicKeyPem;
+          } catch (e) {
+            console.error(e);
+            resultBox.textContent =
+              "❌ خطا: " + (e && e.message ? e.message : String(e));
+          }
+        });
+    </script>
+  </body>
 </html>
