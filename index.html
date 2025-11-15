@@ -2,127 +2,41 @@
 <html lang="fa">
 <head>
   <meta charset="UTF-8" />
-  <title>تست ثبت‌نام Passkey (RSA-SHA256)</title>
+  <title>تست ثبت‌نام Passkey (ES256)</title>
   <script src="./passkey-sdk.js"></script>
   <style>
-    body {
-      font-family: sans-serif;
-      direction: rtl;
-      text-align: center;
-      padding: 50px;
-    }
-    input {
-      padding: 10px;
-      width: 250px;
-      border-radius: 8px;
-      border: 1px solid #ccc;
-      margin-bottom: 10px;
-    }
-    button {
-      padding: 10px 20px;
-      border-radius: 8px;
-      border: none;
-      background-color: #007bff;
-      color: white;
-      cursor: pointer;
-      font-size: 16px;
-    }
-    button:hover {
-      background-color: #0056b3;
-    }
-    pre {
-      background: #f8f9fa;
-      padding: 10px;
-      border-radius: 8px;
-      text-align: left;
-      direction: ltr;
-      max-height: 300px;
-      overflow: auto;
-    }
+    body { font-family: sans-serif; direction: rtl; text-align: center; padding: 50px; }
+    input { padding: 10px; width: 300px; border-radius: 8px; border: 1px solid #ccc; margin-bottom: 10px; }
+    button { padding: 10px 20px; border-radius: 8px; border: none; background:#007bff; color:#fff; cursor:pointer; }
+    pre { background:#f8f9fa; padding:12px; border-radius:8px; text-align:left; direction:ltr; max-height:300px; overflow:auto; }
   </style>
 </head>
 <body>
+  <h2>تست ثبت‌نام Passkey — ES256</h2>
+  <p>ایمیل یا شناسه کاربر را وارد کنید و روی «ثبت‌نام» کلیک کنید.</p>
 
-  <h2>🧩 تست ثبت‌نام Passkey (RSA-SHA256)</h2>
-  <p>ایمیل یا شناسه کاربر را وارد کن و روی «ثبت‌نام» بزن.</p>
-
-  <input type="text" id="userId" placeholder="user@example.com" />
-  <br />
+  <input id="userId" placeholder="user@example.com" />
+  <br/>
   <button id="registerBtn">ثبت‌نام Passkey</button>
 
-  <h3>نتیجه:</h3>
+  <h3>نتیجه</h3>
   <pre id="result"></pre>
 
   <script>
-    const BASE_URL = "https://passkey-backend-xht7.onrender.com";
+    const resultBox = document.getElementById("result");
 
-    // تبدیل base64url به ArrayBuffer
-    function base64UrlToBuffer(base64urlString) {
-      const padding = "=".repeat((4 - (base64urlString.length % 4)) % 4);
-      const base64 = base64urlString.replace(/-/g, "+").replace(/_/g, "/") + padding;
-      const str = atob(base64);
-      const buf = new ArrayBuffer(str.length);
-      const bufView = new Uint8Array(buf);
-      for (let i = 0; i < str.length; i++) bufView[i] = str.charCodeAt(i);
-      return buf;
-    }
-
-    async function handleRegister() {
-      const resultBox = document.getElementById("result");
-      resultBox.textContent = "در حال ساخت کلید و ثبت در سرور...";
-
+    document.getElementById("registerBtn").addEventListener("click", async () => {
       const id = document.getElementById("userId").value.trim();
-      if (!id) {
-        alert("شناسه را وارد کنید.");
-        return;
-      }
-
+      if (!id) { alert("شناسه را وارد کنید"); return; }
       try {
-        // 1️⃣ دریافت challenge از سرور
-        const challengeRes = await fetch(`${BASE_URL}/api/register-challenge`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id })
-        });
-
-        if (!challengeRes.ok) throw new Error("دریافت challenge با خطا مواجه شد");
-
-        const options = await challengeRes.json();
-        const publicKey = options.publicKey;
-
-        // تبدیل challenge و user.id به ArrayBuffer
-        publicKey.challenge = base64UrlToBuffer(publicKey.challenge);
-        publicKey.user.id = new TextEncoder().encode(id);
-
-        // 2️⃣ ایجاد credential با WebAuthn
-        const cred = await navigator.credentials.create({ publicKey });
-        if (!cred) throw new Error("ساخت credential شکست خورد");
-
-        // 3️⃣ استخراج کلید عمومی RSA از attestation
-        const attestationBuffer = cred.response.attestationObject;
-        const publicKeyPem = await PasskeySDK.extractRSAPublicKey(attestationBuffer);
-
-        // 4️⃣ ذخیره public key در سرور
-        const saveRes = await fetch(`${BASE_URL}/api/save-key`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, public_key: publicKeyPem })
-        });
-
-        if (!saveRes.ok) {
-          const err = await saveRes.json().catch(() => ({}));
-          throw new Error(err.error || "خطا در ذخیره کلید در سرور");
-        }
-
-        resultBox.textContent = "✅ ثبت‌نام موفق!\n\n" + publicKeyPem;
-      } catch (err) {
-        console.error(err);
-        resultBox.textContent = "❌ خطا: " + err.message;
+        resultBox.textContent = "در حال ثبت‌نام...";
+        const res = await PasskeySDK.register(id);
+        resultBox.textContent = "✅ ثبت‌نام موفق!\ncredentialId (base64): " + res.credentialId + "\n\npublicKey PEM:\n" + res.publicKeyPem;
+      } catch (e) {
+        console.error(e);
+        resultBox.textContent = "❌ خطا: " + (e && e.message ? e.message : String(e));
       }
-    }
-
-    document.getElementById("registerBtn").addEventListener("click", handleRegister);
+    });
   </script>
-
 </body>
 </html>
