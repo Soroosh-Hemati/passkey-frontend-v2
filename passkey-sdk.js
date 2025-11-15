@@ -1,22 +1,19 @@
-// passkey-sdk.js — ES256 version
+// passkey-sdk.js (dual: ES256 + RSA(-257))
 const PasskeySDK = (() => {
   const BASE_URL = "https://passkey-backend-xht7.onrender.com";
 
-  // --- helpers ---
   function bufferToBase64(buffer) {
     const bytes = new Uint8Array(buffer);
     let binary = "";
     for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
     return btoa(binary);
   }
-
   function pemFromSpki(spkiBuffer) {
     const b64 = bufferToBase64(spkiBuffer);
     const lines = b64.match(/.{1,64}/g) || [];
     return `-----BEGIN PUBLIC KEY-----\n${lines.join("\n")}\n-----END PUBLIC KEY-----`;
   }
 
-  // base64url -> ArrayBuffer
   function base64UrlToBuffer(base64urlString) {
     const padding = "=".repeat((4 - (base64urlString.length % 4)) % 4);
     const base64 = base64urlString.replace(/-/g, "+").replace(/_/g, "/") + padding;
@@ -27,7 +24,7 @@ const PasskeySDK = (() => {
     return buf;
   }
 
-  // --- minimal CBOR decoder (enough for COSE keys) ---
+  // minimal CBOR decoder (enough for COSE keys)
   function decodeCBOR(buffer) {
     const bytes = new Uint8Array(buffer);
     let offset = 0;
@@ -43,10 +40,7 @@ const PasskeySDK = (() => {
       if (ai === 24) return readUint(1);
       if (ai === 25) return readUint(2);
       if (ai === 26) return readUint(4);
-      if (ai === 27) {
-        const hi = readUint(4), lo = readUint(4);
-        return hi * 2 ** 32 + lo;
-      }
+      if (ai === 27) { const hi = readUint(4), lo = readUint(4); return hi * 2 ** 32 + lo; }
       throw new Error("unsupported additional info: " + ai);
     }
 
@@ -70,124 +64,141 @@ const PasskeySDK = (() => {
     return parse();
   }
 
-  // --- extract EC (P-256) public key from attestationObject ---
-  async function extractECPublicKey(attestationBuffer) {
-    // attestationBuffer: ArrayBuffer or Uint8Array
-    const attObj = decodeCBOR(attestationBuffer);
-    const authData = attObj.authData;
-    if (!authData) throw new Error("missing authData in attestationObject");
-
-    // authData is Uint8Array
+  // extract EC public key (P-256 etc)
+  async function extractECPublicKeyFromAuthData(authData) {
     let ptr = 0;
-    ptr += 32; // rpIdHash
-    ptr += 1;  // flags
-    ptr += 4;  // signCount
-
-    // attestedCredentialData: aaguid(16) + credIdLen(2) + credId + credentialPublicKey (CBOR)
+    ptr += 32; ptr += 1; ptr += 4; // rpHash, flags, signCount
     ptr += 16; // aaguid
     const credIdLen = (authData[ptr] << 8) | authData[ptr + 1];
     ptr += 2;
     ptr += credIdLen;
-    const coseKeyBytes = authData.slice(ptr); // rest is CBOR COSE key
+    const coseKeyBytes = authData.slice(ptr);
     const coseKey = decodeCBOR(coseKeyBytes.buffer);
 
-    // COSE: 1 => kty, 3 => alg, -1 => crv, -2 => x, -3 => y
-    if (coseKey[1] !== 2) { // 2 == EC2
-      throw new Error("COSE key is not EC2");
-    }
-    const crv = coseKey[-1]; // typically 1 => P-256
+    if (coseKey[1] !== 2) throw new Error("COSE key is not EC2");
+    const crv = coseKey[-1];
     const x = coseKey[-2];
     const y = coseKey[-3];
-    if (!x || !y) throw new Error("COSE EC key missing x/y");
-
-    // build uncompressed point 0x04 || x || y
     const pubKeyRaw = new Uint8Array(1 + x.length + y.length);
     pubKeyRaw[0] = 0x04;
     pubKeyRaw.set(x, 1);
     pubKeyRaw.set(y, 1 + x.length);
 
-    // import raw EC public key and export SPKI (PEM)
     const namedCurve = (crv === 1) ? "P-256" : (crv === 2 ? "P-384" : (crv === 3 ? "P-521" : null));
     if (!namedCurve) throw new Error("Unsupported EC curve: " + crv);
 
-    const key = await crypto.subtle.importKey(
-      "raw",
-      pubKeyRaw.buffer,
-      { name: "ECDSA", namedCurve },
-      true,
-      ["verify"]
-    );
+    const key = await crypto.subtle.importKey("raw", pubKeyRaw.buffer, { name: "ECDSA", namedCurve }, true, ["verify"]);
     const spki = await crypto.subtle.exportKey("spki", key);
-    return pemFromSpki(spki);
+    return { pem: pemFromSpki(spki), alg: -7 };
   }
 
-  // --- main register() : uses register-challenge endpoint and requests ES256 ---
-  async function register(id) {
-    if (!id) throw new Error("id is required");
+  // extract RSA public key from authData
+  async function extractRSAPublicKeyFromAuthData(authData) {
+    let ptr = 0;
+    ptr += 32; ptr += 1; ptr += 4;
+    ptr += 16;
+    const credIdLen = (authData[ptr] << 8) | authData[ptr + 1];
+    ptr += 2;
+    ptr += credIdLen;
+    const coseKeyBytes = authData.slice(ptr);
+    const coseKey = decodeCBOR(coseKeyBytes.buffer);
 
-    // get options from server
+    if (coseKey[1] !== 3) throw new Error("COSE key is not RSA");
+    const n = coseKey[-1];
+    const e = coseKey[-2];
+    // JWK n,e base64url
+    const jwk = {
+      kty: "RSA",
+      n: bufferToBase64(n).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, ""),
+      e: bufferToBase64(e).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, ""),
+      alg: "RS256",
+      ext: true
+    };
+    const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, true, ["verify"]);
+    const spki = await crypto.subtle.exportKey("spki", key);
+    return { pem: pemFromSpki(spki), alg: -257 };
+  }
+
+  // generic extractor that inspects attestationObject and returns { pem, alg }
+  async function extractPublicKeyFromAttestation(attestationBuffer) {
+    // handle ArrayBuffer or Uint8Array
+    const view = (attestationBuffer instanceof ArrayBuffer) ? new Uint8Array(attestationBuffer) : (attestationBuffer instanceof Uint8Array ? attestationBuffer : new Uint8Array(attestationBuffer.buffer));
+    // decode CBOR attestationObject
+    const attObj = decodeCBOR(view.buffer);
+    if (!attObj || !attObj.authData) throw new Error("attestationObject parsing failed");
+    const authData = attObj.authData; // Uint8Array
+    // We need to inspect COSE key to see kty
+    // easiest: decode COSE key as in extract functions: compute credIdLen etc then decode
+    let ptr = 0;
+    ptr += 32; ptr += 1; ptr += 4; ptr += 16;
+    const credIdLen = (authData[ptr] << 8) | authData[ptr + 1];
+    ptr += 2;
+    ptr += credIdLen;
+    const coseKeyBytes = authData.slice(ptr);
+    const coseKey = decodeCBOR(coseKeyBytes.buffer);
+    const kty = coseKey[1];
+    if (kty === 2) {
+      return await extractECPublicKeyFromAuthData(authData);
+    } else if (kty === 3) {
+      return await extractRSAPublicKeyFromAuthData(authData);
+    } else {
+      throw new Error("Unsupported COSE key type: " + kty);
+    }
+  }
+
+  // main register()
+  async function register(id) {
+    if (!id) throw new Error("id الزامی است");
+
+    // get challenge/options from server
     const challengeRes = await fetch(`${BASE_URL}/api/register-challenge`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id })
     });
-    if (!challengeRes.ok) throw new Error("Failed to get register challenge from server");
+    if (!challengeRes.ok) throw new Error("دریافت challenge از سرور شکست خورد");
     const options = await challengeRes.json();
     const publicKey = options.publicKey;
 
-    // convert challenge and user.id to required types
+    // convert challenge and user.id
     publicKey.challenge = base64UrlToBuffer(publicKey.challenge);
-    // ensure rp.id is compatible — server should have set rp.id appropriately
-
-    // user.id must be ArrayBuffer — server sent base64url, but we will use provided id
-    // many servers set user.id as base64url; if not, encode client-side:
     if (!publicKey.user || !publicKey.user.id) {
-      publicKey.user = publicKey.user || {};
-      publicKey.user.id = new TextEncoder().encode(id);
-      publicKey.user.name = id;
-      publicKey.user.displayName = id;
+      publicKey.user = { id: new TextEncoder().encode(id), name: id, displayName: id };
     } else {
-      // if server-provided, it might be base64url string — try to convert:
       if (typeof publicKey.user.id === "string") {
-        try {
-          publicKey.user.id = base64UrlToBuffer(publicKey.user.id);
-        } catch (e) {
-          publicKey.user.id = new TextEncoder().encode(id);
-        }
+        publicKey.user.id = base64UrlToBuffer(publicKey.user.id);
       }
     }
 
-    // enforce ES256 as first option
-    publicKey.pubKeyCredParams = [{ type: "public-key", alg: -7 }];
+    // ensure both algs present (prefer server list but enforce ES256 first)
+    publicKey.pubKeyCredParams = [
+      { type: "public-key", alg: -7 },
+      { type: "public-key", alg: -257 },
+    ];
 
-    // ask for platform authenticator if desired (server may already set)
-    publicKey.authenticatorSelection = publicKey.authenticatorSelection || {};
-    // keep existing authenticatorAttachment if server provided; otherwise prefer platform:
-    // publicKey.authenticatorSelection.authenticatorAttachment = "platform";
-
-    // create credential
     const cred = await navigator.credentials.create({ publicKey });
-    if (!cred) throw new Error("credential creation failed");
+    if (!cred) throw new Error("ساخت credential شکست خورد");
 
-    // extract attestation and EC public key PEM
-    const attestationBuffer = cred.response.attestationObject;
-    const publicKeyPem = await extractECPublicKey(attestationBuffer);
+    const attestation = cred.response.attestationObject;
+    const attestationBuffer = (attestation instanceof ArrayBuffer) ? attestation : attestation.buffer || attestation;
+    const keyInfo = await extractPublicKeyFromAttestation(attestationBuffer);
 
-    // send to server
-    const saveRes = await fetch(`${BASE_URL}/api/save-key`, {
+    // send public key and credential id to server
+    const credentialIdB64 = bufferToBase64(cred.rawId);
+    const resp = await fetch(`${BASE_URL}/api/save-key`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, public_key: publicKeyPem })
+      body: JSON.stringify({ id, public_key: keyInfo.pem, credential_id: credentialIdB64 })
     });
-    if (!saveRes.ok) {
-      const j = await saveRes.json().catch(()=>({}));
-      throw new Error(j.error || "Failed to save public key");
+    if (!resp.ok) {
+      const j = await resp.json().catch(()=>({}));
+      throw new Error(j.error || "خطا در ذخیره public key در سرور");
     }
 
-    return { success: true, publicKeyPem, credentialId: bufferToBase64(cred.rawId) };
+    return { success: true, publicKeyPem: keyInfo.pem, alg: keyInfo.alg, credentialId: credentialIdB64 };
   }
 
-  return { register, extractECPublicKey };
+  return { register, extractPublicKeyFromAttestation };
 })();
 
 if (typeof window !== "undefined") window.PasskeySDK = PasskeySDK;
